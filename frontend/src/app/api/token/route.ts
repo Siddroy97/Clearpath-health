@@ -1,4 +1,4 @@
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, AgentDispatchClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -29,6 +29,16 @@ export async function GET() {
   });
 
   const token = await at.toJwt();
+
+  // Explicitly dispatch the agent to the room
+  try {
+    const httpUrl = livekitUrl.replace("wss://", "https://");
+    const dispatch = new AgentDispatchClient(httpUrl, apiKey, apiSecret);
+    await dispatch.createDispatch(roomName, "clearpath-health-agent");
+  } catch (err) {
+    console.error("Agent dispatch failed (agent may not be running):", err);
+    // Don't block the token response — the agent may join via auto-dispatch
+  }
 
   return NextResponse.json({
     token,
