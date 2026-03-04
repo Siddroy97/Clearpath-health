@@ -19,6 +19,7 @@ from livekit import agents
 from livekit.agents import Agent, AgentSession, AgentServer
 from livekit.plugins import anthropic, deepgram, elevenlabs, silero
 
+import agent.state as state
 from agent.prompts import SYSTEM_PROMPT
 from agent.tools import (
     verify_insurance,
@@ -62,6 +63,9 @@ server = AgentServer()
 
 @server.rtc_session(agent_name="clearpath-health-agent")
 async def entrypoint(ctx: agents.JobContext):
+    # Store room reference so tools can publish data messages
+    state.room = ctx.room
+
     session = AgentSession(
         stt=deepgram.STT(model="nova-3", language="en"),
         llm=anthropic.LLM(
