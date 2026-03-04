@@ -1,6 +1,8 @@
+import asyncio
 import logging
 import os
 import sys
+import threading
 
 from dotenv import load_dotenv
 
@@ -24,6 +26,7 @@ from agent.tools import (
     check_doctor_availability,
     book_appointment,
     escalate_to_human,
+    lookup_ehr_history,
 )
 
 logger = logging.getLogger("clearpath-agent")
@@ -34,6 +37,7 @@ ALL_TOOLS = [
     check_doctor_availability,
     book_appointment,
     escalate_to_human,
+    lookup_ehr_history,
 ]
 
 
@@ -76,5 +80,19 @@ async def entrypoint(ctx: agents.JobContext):
     )
 
 
+def _run_telephony_server():
+    """Start the FastAPI telephony webhook server in a background thread."""
+    import uvicorn
+    from agent.telephony import app as telephony_app
+
+    logger.info("Starting telephony webhook server on port 8080")
+    uvicorn.run(telephony_app, host="0.0.0.0", port=8080, log_level="info")
+
+
 if __name__ == "__main__":
+    # Start the telephony webhook server in a daemon thread so it
+    # runs alongside the LiveKit agent worker without blocking it
+    telephony_thread = threading.Thread(target=_run_telephony_server, daemon=True)
+    telephony_thread.start()
+
     agents.cli.run_app(server)

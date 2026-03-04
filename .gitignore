@@ -1,5 +1,15 @@
 # Environment variables (API keys)
 .env
+.env.local
+frontend/.env.local
+
+# Google service account credentials
+clearpath-service-account.json
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!vercel.json
 
 # Python
 __pycache__/
@@ -18,6 +28,9 @@ env/
 .idea/
 *.swp
 *.swo
+
+# Node
+node_modules/
 
 # OS
 .DS_Store

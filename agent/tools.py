@@ -1,10 +1,14 @@
 import logging
+import os
 import random
+import time
 from difflib import SequenceMatcher
 
 from livekit.agents import Agent, RunContext, function_tool
 
 from agent.mock_data import PLAN_CONFIG
+from agent.sheets import append_appointment, update_sms_status
+from agent.sms import send_booking_confirmation
 
 logger = logging.getLogger("clearpath-tools")
 
@@ -182,7 +186,7 @@ async def book_appointment(
             )
         return f"Sorry, {doctor['name']} has no available slots right now."
 
-    # Book it
+    # Book it in mock data
     target_slot["available"] = False
     confirmation = f"CLR-{random.randint(100000, 999999)}"
 
@@ -198,15 +202,56 @@ async def book_appointment(
     }
     PLAN_CONFIG["booked_appointments"].append(appointment)
 
-    return (
-        f"Appointment confirmed!\n"
-        f"Confirmation Number: {confirmation}\n"
-        f"Patient: {member['name']}\n"
-        f"Doctor: {doctor['name']} ({doctor['specialty']})\n"
-        f"Time: {slot}\n"
-        f"Location: {doctor['location']}\n"
-        "Please arrive 15 minutes early for check-in."
+    # Log to Google Sheets
+    sheets_ok = append_appointment(
+        confirmation_number=confirmation,
+        member_id=member_id.upper(),
+        member_name=member["name"],
+        doctor_name=doctor["name"],
+        slot=slot,
     )
+
+    # Send SMS confirmation
+    patient_phone = os.environ.get("PATIENT_PHONE_NUMBER", "")
+    sms_ok = False
+    if patient_phone:
+        sms_ok = send_booking_confirmation(
+            to_number=patient_phone,
+            member_name=member["name"],
+            doctor_name=doctor["name"],
+            slot=slot,
+            confirmation_number=confirmation,
+        )
+        if sms_ok and sheets_ok:
+            update_sms_status(confirmation)
+
+    # Build response with all three status indicators
+    lines = [
+        f"Appointment confirmed!",
+        f"Confirmation Number: {confirmation}",
+        f"Patient: {member['name']}",
+        f"Doctor: {doctor['name']} ({doctor['specialty']})",
+        f"Time: {slot}",
+        f"Location: {doctor['location']}",
+        "Please arrive 15 minutes early for check-in.",
+    ]
+
+    if sheets_ok:
+        lines.append("Records: Successfully logged to our records system.")
+    else:
+        lines.append(
+            "Records: There was an issue logging to our records system — "
+            "our team will follow up."
+        )
+
+    if sms_ok:
+        lines.append("SMS: A text confirmation has been sent to your phone.")
+    elif patient_phone:
+        lines.append("SMS: We were unable to send a text confirmation, but your booking is secure.")
+    else:
+        lines.append("SMS: No phone number on file — text confirmation skipped.")
+
+    return "\n".join(lines)
 
 
 @function_tool()
@@ -222,4 +267,76 @@ async def escalate_to_human(context: RunContext, reason: str) -> str:
         f"I've noted the reason: {reason}. "
         "Please stay on the line — a representative will be with you shortly. "
         "Your estimated wait time is under 2 minutes."
+    )
+
+
+# In production, this would be an Epic FHIR API call or
+# Availity integration - both are notoriously slow and
+# return inconsistent schemas across health systems.
+
+MOCK_EHR_DATA = {
+    "MBR001": {
+        "last_visit": "2024-11-15",
+        "last_provider": "Dr. Priya Patel",
+        "visit_count_ytd": 3,
+        "active_conditions": ["Hypertension", "Type 2 Diabetes"],
+        "current_medications": ["Metformin 500mg", "Lisinopril 10mg"],
+        "allergies": ["Penicillin"],
+    },
+}
+
+
+@function_tool()
+async def lookup_ehr_history(context: RunContext, member_id: str) -> str:
+    """Look up a patient's visit history from the MediTrack EHR system.
+
+    This queries the legacy EHR for past visits, active conditions,
+    medications, and allergies. The system can be slow or unreliable.
+
+    Args:
+        member_id: The member's ID (e.g. MBR001).
+    """
+    roll = random.random()
+
+    # 25% chance: simulate a timeout
+    if roll < 0.25:
+        time.sleep(3)
+        logger.warning(f"MediTrack EHR timeout for member {member_id}")
+        return (
+            "ERROR: MediTrack EHR v2.3 connection timed out after 3 seconds. "
+            "Unable to retrieve patient history at this time. "
+            "The agent should let the patient know their medical records are "
+            "temporarily unavailable and offer to help with what is available."
+        )
+
+    # 15% chance: return malformed/empty data
+    if roll < 0.40:
+        logger.warning(f"MediTrack EHR returned malformed data for member {member_id}")
+        return (
+            "ERROR: MediTrack EHR v2.3 returned an unexpected response format. "
+            "Payload was empty or contained invalid schema. "
+            "The agent should let the patient know their medical records are "
+            "temporarily unavailable and offer to help with what is available."
+        )
+
+    # 60% chance: success
+    record = MOCK_EHR_DATA.get(member_id.upper())
+    if not record:
+        return (
+            f"No EHR records found for member {member_id} in MediTrack. "
+            "This member may be new or records may not have been migrated."
+        )
+
+    conditions = ", ".join(record["active_conditions"])
+    medications = ", ".join(record["current_medications"])
+    allergies = ", ".join(record["allergies"])
+
+    return (
+        f"MediTrack EHR v2.3 — Patient Record for {member_id}:\n"
+        f"Last Visit: {record['last_visit']} with {record['last_provider']}\n"
+        f"Visits This Year: {record['visit_count_ytd']}\n"
+        f"Active Conditions: {conditions}\n"
+        f"Current Medications: {medications}\n"
+        f"Allergies: {allergies}\n"
+        "Note: Summarize relevant info naturally. Do not read raw data verbatim."
     )
