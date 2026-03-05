@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@livekit/components-react": "^2.9.20",
     "livekit-client": "^2.17.2",
     "livekit-server-sdk": "^2.15.0",
