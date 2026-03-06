@@ -3,13 +3,20 @@
 import { useState } from "react";
 import LiveTrace, { ToolCall } from "./LiveTrace";
 import TestSuite from "./TestSuite";
+import EvalResults from "./EvalResults";
 
 interface AgentInsightsProps {
   toolCalls: ToolCall[];
 }
 
 export default function AgentInsights({ toolCalls }: AgentInsightsProps) {
-  const [activeTab, setActiveTab] = useState<"trace" | "tests">("trace");
+  const [activeTab, setActiveTab] = useState<"trace" | "tests" | "evals">("trace");
+
+  const tabs = [
+    { key: "trace" as const, label: "Live Trace" },
+    { key: "tests" as const, label: "Test Suite" },
+    { key: "evals" as const, label: "Eval Results" },
+  ];
 
   return (
     <div className="flex flex-col h-full">
@@ -17,32 +24,31 @@ export default function AgentInsights({ toolCalls }: AgentInsightsProps) {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold text-gray-800">Agent Insights</h2>
         <div className="flex bg-gray-100 rounded-lg p-0.5">
-          <button
-            onClick={() => setActiveTab("trace")}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              activeTab === "trace"
-                ? "bg-white text-teal-700 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            Live Trace
-          </button>
-          <button
-            onClick={() => setActiveTab("tests")}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              activeTab === "tests"
-                ? "bg-white text-teal-700 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            Test Suite
-          </button>
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                activeTab === tab.key
+                  ? "bg-white text-teal-700 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === "trace" ? <LiveTrace toolCalls={toolCalls} /> : <TestSuite />}
+        {activeTab === "trace" ? (
+          <LiveTrace toolCalls={toolCalls} />
+        ) : activeTab === "tests" ? (
+          <TestSuite />
+        ) : (
+          <EvalResults />
+        )}
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ clearpath-service-account.json
 !package-lock.json
 !tsconfig.json
 !vercel.json
+!eval/*.json
 
 # Python
 __pycache__/
