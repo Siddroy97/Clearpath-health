@@ -409,7 +409,7 @@ def judge_response(
 """
 
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-haiku-4-5-20251001",
         max_tokens=512,
         system=JUDGE_PROMPT,
         messages=[{"role": "user", "content": judge_input}],
@@ -537,7 +537,7 @@ def generate_report(results: list) -> dict:
     return {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "model": "claude-haiku-4-5-20251001",
-        "judge_model": "claude-sonnet-4-20250514",
+        "judge_model": "claude-haiku-4-5-20251001",
         "total_tests": total,
         "passed": passed,
         "failed": failed,

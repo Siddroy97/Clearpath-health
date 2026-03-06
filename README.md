@@ -168,7 +168,7 @@ Real-time tool call log streamed from the agent via LiveKit data messages. Shows
 12 quick eval scenarios that run against the `/api/eval` endpoint (Claude Haiku + mock tools). Covers happy path, edge cases, and safety/compliance. Click **Run Tests** to execute all scenarios.
 
 ### Eval Results (LLM-as-Judge)
-A comprehensive 20-test evaluation suite scored by Claude Sonnet across 5 dimensions. Click **Re-run Evals** to execute. The `POST /api/eval/run` route runs all tests and saves the report to `eval/latest_report.json`; subsequent page loads fetch the cached report via `GET /api/eval/run`.
+A comprehensive 20-test evaluation suite scored by Claude Haiku across 5 dimensions. Click **Re-run Evals** to execute. The `POST /api/eval/run` route runs all tests and saves the report to `eval/latest_report.json`; subsequent page loads fetch the cached report via `GET /api/eval/run`.
 
 #### Running Evals Locally (Python CLI)
 

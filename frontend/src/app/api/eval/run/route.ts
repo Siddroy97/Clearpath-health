@@ -328,7 +328,7 @@ ${testCase.expected_tool || "None (agent should respond without tools)"}
 
   try {
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 512,
       system: JUDGE_PROMPT,
       messages: [{ role: "user", content: judgeInput }],
@@ -473,7 +473,7 @@ export async function POST() {
   const report = {
     timestamp: new Date().toISOString(),
     model: "claude-haiku-4-5-20251001",
-    judge_model: "claude-sonnet-4-20250514",
+    judge_model: "claude-haiku-4-5-20251001",
     total_tests: total,
     passed,
     failed: total - passed,
