@@ -11,6 +11,7 @@ clearpath-service-account.json
 !tsconfig.json
 !vercel.json
 !eval/*.json
+!frontend/src/data/*.json
 
 # Python
 __pycache__/

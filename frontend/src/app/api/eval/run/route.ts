@@ -1,7 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join } from "path";
+import TEST_CASES_DATA from "@/data/test_cases.json";
+
+// Vercel max function duration (requires Pro plan for >10s)
+export const maxDuration = 60;
 
 // ── Mock data (same as eval/route.ts) ──
 
@@ -354,17 +356,9 @@ ${testCase.expected_tool || "None (agent should respond without tools)"}
 // ── GET: Return cached latest report ──
 
 export async function GET() {
-  try {
-    const evalDir = join(process.cwd(), "..", "eval");
-    const reportPath = join(evalDir, "latest_report.json");
-    if (existsSync(reportPath)) {
-      const data = JSON.parse(readFileSync(reportPath, "utf-8"));
-      return NextResponse.json(data);
-    }
-    return NextResponse.json({ error: "No report found" }, { status: 404 });
-  } catch {
-    return NextResponse.json({ error: "Failed to read report" }, { status: 500 });
-  }
+  // On Vercel (serverless), the filesystem is ephemeral — no cached report available.
+  // The frontend will show the "Run Evals" empty state until the user triggers a run.
+  return NextResponse.json({ error: "No cached report" }, { status: 404 });
 }
 
 // ── POST: Run full eval suite ──
@@ -377,15 +371,8 @@ export async function POST() {
 
   const client = new Anthropic({ apiKey });
 
-  // Load test cases
-  let testCases: TestCase[];
-  try {
-    const casesPath = join(process.cwd(), "..", "eval", "test_cases.json");
-    const data = JSON.parse(readFileSync(casesPath, "utf-8"));
-    testCases = data.test_cases;
-  } catch {
-    return NextResponse.json({ error: "Could not load test_cases.json" }, { status: 500 });
-  }
+  // Load test cases from bundled JSON (works on Vercel)
+  const testCases: TestCase[] = (TEST_CASES_DATA as { test_cases: TestCase[] }).test_cases;
 
   const results = [];
 
@@ -489,15 +476,6 @@ export async function POST() {
     recommendations,
     results,
   };
-
-  // Save report
-  try {
-    const evalDir = join(process.cwd(), "..", "eval");
-    if (!existsSync(evalDir)) mkdirSync(evalDir, { recursive: true });
-    writeFileSync(join(evalDir, "latest_report.json"), JSON.stringify(report, null, 2));
-  } catch {
-    // Non-fatal: report still returned in response
-  }
 
   return NextResponse.json(report);
 }
