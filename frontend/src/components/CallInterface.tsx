@@ -41,6 +41,8 @@ function RoomControls({
   const agentTracks = useTracks([Track.Source.Microphone], {
     onlySubscribed: true,
   });
+  // Track seen segment IDs to prevent duplicate transcript entries
+  const seenSegmentIds = useRef<Set<string>>(new Set());
 
   const agentConnected = participants.some((p) => p.identity.startsWith("agent"));
   const agentSpeaking = agentTracks.some(
@@ -70,20 +72,23 @@ function RoomControls({
     return () => { room.off(RoomEvent.DataReceived, handleData); };
   }, [room, onToolCall]);
 
-  // Listen for transcription events
+  // Listen for transcription events — deduplicate by segment ID
   useEffect(() => {
     const handleTranscription = (
-      segments: Array<{ text: string; final: boolean }>,
+      segments: Array<{ id?: string; text: string; final: boolean }>,
       participant: { identity: string } | undefined,
     ) => {
       for (const segment of segments) {
-        if (segment.final && segment.text.trim()) {
-          const role = participant?.identity.startsWith("agent") ? "agent" : "user";
-          setTranscript((prev) => [
-            ...prev,
-            { role: role as "agent" | "user", text: segment.text, timestamp: new Date() },
-          ]);
-        }
+        if (!segment.final || !segment.text.trim()) continue;
+        // Each segment has a unique ID — skip if we've already rendered it
+        const segId = segment.id ?? segment.text;
+        if (seenSegmentIds.current.has(segId)) continue;
+        seenSegmentIds.current.add(segId);
+        const role = participant?.identity.startsWith("agent") ? "agent" : "user";
+        setTranscript((prev) => [
+          ...prev,
+          { role: role as "agent" | "user", text: segment.text, timestamp: new Date() },
+        ]);
       }
     };
     room.on(RoomEvent.TranscriptionReceived, handleTranscription);
