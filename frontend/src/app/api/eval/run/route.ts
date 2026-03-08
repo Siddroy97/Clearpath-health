@@ -2,8 +2,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import TEST_CASES_DATA from "@/data/test_cases.json";
 
-// Vercel max function duration (requires Pro plan for >10s)
-export const maxDuration = 60;
+// Vercel function duration — 10s on Hobby, 60s on Pro
+// With parallel execution, 21 evals complete in ~10s so Hobby should be fine
+export const maxDuration = 10;
 
 // ── Mock data (same as eval/route.ts) ──
 

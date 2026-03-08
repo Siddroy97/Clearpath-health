@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 
-// Allow up to 60s for a complex multi-turn agent call on Vercel Pro
-export const maxDuration = 60;
+// Vercel function duration — 10s on Hobby, 60s on Pro
+export const maxDuration = 10;
 
 // ── Mock data (mirrors agent/mock_data.py) ──
 
