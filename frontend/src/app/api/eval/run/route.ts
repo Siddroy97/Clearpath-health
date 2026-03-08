@@ -382,42 +382,43 @@ export async function POST() {
   // Load test cases from bundled JSON (works on Vercel)
   const testCases: TestCase[] = (TEST_CASES_DATA as { test_cases: TestCase[] }).test_cases;
 
-  const results = [];
+  // Run all test cases in parallel — reduces wall-clock time from ~60s to ~10s
+  const results = await Promise.all(
+    testCases.map(async (tc) => {
+      const prompt = tc.turns[0].content;
 
-  for (const tc of testCases) {
-    const prompt = tc.turns[0].content;
+      // Run agent
+      const agentResult = await runAgent(client, prompt);
 
-    // Run agent
-    const agentResult = await runAgent(client, prompt);
+      // Keyword check
+      const lower = agentResult.response.toLowerCase();
+      const kwAny = tc.pass_criteria.keywords_any;
+      const kwNone = tc.pass_criteria.keywords_none;
+      const hasExpectedTool = tc.expected_tool
+        ? agentResult.toolsCalled.some((t) => t.name === tc.expected_tool)
+        : true;
+      const hasKeyword = kwAny.length === 0 || kwAny.some((kw) => lower.includes(kw.toLowerCase()));
+      const noFailKeyword = kwNone.length === 0 || !kwNone.some((kw) => lower.includes(kw.toLowerCase()));
+      const keywordPass = hasExpectedTool && hasKeyword && noFailKeyword;
 
-    // Keyword check
-    const lower = agentResult.response.toLowerCase();
-    const kwAny = tc.pass_criteria.keywords_any;
-    const kwNone = tc.pass_criteria.keywords_none;
-    const hasExpectedTool = tc.expected_tool
-      ? agentResult.toolsCalled.some((t) => t.name === tc.expected_tool)
-      : true;
-    const hasKeyword = kwAny.length === 0 || kwAny.some((kw) => lower.includes(kw.toLowerCase()));
-    const noFailKeyword = kwNone.length === 0 || !kwNone.some((kw) => lower.includes(kw.toLowerCase()));
-    const keywordPass = hasExpectedTool && hasKeyword && noFailKeyword;
+      // LLM Judge
+      const judgeResult = await judgeResponse(client, tc, agentResult.response, agentResult.toolsCalled);
 
-    // LLM Judge
-    const judgeResult = await judgeResponse(client, tc, agentResult.response, agentResult.toolsCalled);
-
-    results.push({
-      id: tc.id,
-      name: tc.name,
-      category: tc.category,
-      prompt,
-      response: agentResult.response,
-      tools_called: agentResult.toolsCalled,
-      latency_ms: agentResult.latencyMs,
-      input_tokens: agentResult.inputTokens,
-      output_tokens: agentResult.outputTokens,
-      keyword_pass: keywordPass,
-      judge: judgeResult,
-    });
-  }
+      return {
+        id: tc.id,
+        name: tc.name,
+        category: tc.category,
+        prompt,
+        response: agentResult.response,
+        tools_called: agentResult.toolsCalled,
+        latency_ms: agentResult.latencyMs,
+        input_tokens: agentResult.inputTokens,
+        output_tokens: agentResult.outputTokens,
+        keyword_pass: keywordPass,
+        judge: judgeResult,
+      };
+    })
+  );
 
   // Token totals — Haiku pricing: $0.80/M input, $4.00/M output
   const COST_PER_M_INPUT = 0.80;

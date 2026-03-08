@@ -254,7 +254,7 @@ export default function EvalResults() {
       {running && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
           <p className="text-sm text-yellow-700 animate-pulse">
-            Running 20 evaluations with LLM judge... This takes ~60 seconds.
+            Running 21 evaluations in parallel with LLM judge... This takes ~15 seconds.
           </p>
         </div>
       )}
