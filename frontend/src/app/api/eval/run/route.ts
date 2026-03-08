@@ -259,10 +259,12 @@ interface TestCase {
 async function runAgent(
   client: Anthropic,
   prompt: string
-): Promise<{ response: string; toolsCalled: { name: string; input: Record<string, unknown>; output: string }[]; latencyMs: number }> {
+): Promise<{ response: string; toolsCalled: { name: string; input: Record<string, unknown>; output: string }[]; latencyMs: number; inputTokens: number; outputTokens: number }> {
   const toolsCalled: { name: string; input: Record<string, unknown>; output: string }[] = [];
   const start = Date.now();
   let messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   for (let turn = 0; turn < 5; turn++) {
     const response = await client.messages.create({
@@ -273,13 +275,16 @@ async function runAgent(
       messages,
     });
 
+    inputTokens += response.usage.input_tokens;
+    outputTokens += response.usage.output_tokens;
+
     const toolBlocks = response.content.filter(
       (b): b is Anthropic.ContentBlock & { type: "tool_use" } => b.type === "tool_use"
     );
 
     if (toolBlocks.length === 0 || response.stop_reason === "end_turn") {
       const text = response.content.filter((b) => b.type === "text").map((b) => ("text" in b ? b.text : "")).join("");
-      return { response: text, toolsCalled, latencyMs: Date.now() - start };
+      return { response: text, toolsCalled, latencyMs: Date.now() - start, inputTokens, outputTokens };
     }
 
     const toolResults: Anthropic.MessageParam = {
@@ -294,7 +299,7 @@ async function runAgent(
     messages = [...messages, { role: "assistant", content: response.content }, toolResults];
   }
 
-  return { response: "[Eval reached max tool turns]", toolsCalled, latencyMs: Date.now() - start };
+  return { response: "[Eval reached max tool turns]", toolsCalled, latencyMs: Date.now() - start, inputTokens, outputTokens };
 }
 
 // ── LLM Judge ──
@@ -304,7 +309,7 @@ async function judgeResponse(
   testCase: TestCase,
   agentResponse: string,
   toolsCalled: { name: string; input: Record<string, unknown>; output: string }[]
-): Promise<{ passed: boolean; scores: Record<string, number>; reasoning: string }> {
+): Promise<{ passed: boolean; scores: Record<string, number>; reasoning: string; tokens: { input_tokens: number; output_tokens: number } }> {
   const criteria = testCase.pass_criteria;
 
   const judgeInput = `## Test Case
@@ -336,6 +341,8 @@ ${testCase.expected_tool || "None (agent should respond without tools)"}
       messages: [{ role: "user", content: judgeInput }],
     });
 
+    const judgeTokens = { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens };
+
     let text = response.content[0].type === "text" ? response.content[0].text.trim() : "";
     if (text.startsWith("```")) {
       text = text.split("\n").slice(1).join("\n");
@@ -343,12 +350,13 @@ ${testCase.expected_tool || "None (agent should respond without tools)"}
       text = text.trim();
     }
 
-    return JSON.parse(text);
+    return { ...JSON.parse(text), tokens: judgeTokens };
   } catch {
     return {
       passed: false,
       scores: { accuracy: 1, safety: 1, containment: 1, conciseness: 1, flow: 1 },
       reasoning: "Judge failed to return valid JSON",
+      tokens: { input_tokens: 0, output_tokens: 0 },
     };
   }
 }
@@ -404,10 +412,19 @@ export async function POST() {
       response: agentResult.response,
       tools_called: agentResult.toolsCalled,
       latency_ms: agentResult.latencyMs,
+      input_tokens: agentResult.inputTokens,
+      output_tokens: agentResult.outputTokens,
       keyword_pass: keywordPass,
       judge: judgeResult,
     });
   }
+
+  // Token totals — Haiku pricing: $0.80/M input, $4.00/M output
+  const COST_PER_M_INPUT = 0.80;
+  const COST_PER_M_OUTPUT = 4.00;
+  const totalInputTokens = results.reduce((s, r) => s + (r.input_tokens ?? 0) + (r.judge.tokens?.input_tokens ?? 0), 0);
+  const totalOutputTokens = results.reduce((s, r) => s + (r.output_tokens ?? 0) + (r.judge.tokens?.output_tokens ?? 0), 0);
+  const estimatedCostUsd = Math.round(((totalInputTokens / 1_000_000) * COST_PER_M_INPUT + (totalOutputTokens / 1_000_000) * COST_PER_M_OUTPUT) * 10000) / 10000;
 
   // Generate report
   const total = results.length;
@@ -465,6 +482,12 @@ export async function POST() {
     passed,
     failed: total - passed,
     pass_rate: total > 0 ? Math.round((passed / total) * 1000) / 10 : 0,
+    token_usage: {
+      total_input_tokens: totalInputTokens,
+      total_output_tokens: totalOutputTokens,
+      total_tokens: totalInputTokens + totalOutputTokens,
+      estimated_cost_usd: estimatedCostUsd,
+    },
     category_breakdown: Object.fromEntries(
       Object.entries(categories).map(([cat, info]) => [
         cat,

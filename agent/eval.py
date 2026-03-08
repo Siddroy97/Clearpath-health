@@ -294,6 +294,8 @@ def run_agent(client: anthropic.Anthropic, prompt: str) -> dict:
     messages = [{"role": "user", "content": prompt}]
     tools_called = []
     start = time.time()
+    input_tokens = 0
+    output_tokens = 0
 
     for _turn in range(5):
         response = client.messages.create(
@@ -304,6 +306,9 @@ def run_agent(client: anthropic.Anthropic, prompt: str) -> dict:
             messages=messages,
         )
 
+        input_tokens += response.usage.input_tokens
+        output_tokens += response.usage.output_tokens
+
         tool_blocks = [b for b in response.content if b.type == "tool_use"]
 
         if not tool_blocks or response.stop_reason == "end_turn":
@@ -312,6 +317,8 @@ def run_agent(client: anthropic.Anthropic, prompt: str) -> dict:
                 "response": "".join(text_parts),
                 "tools_called": tools_called,
                 "latency_ms": int((time.time() - start) * 1000),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
             }
 
         # Execute tools
@@ -337,6 +344,8 @@ def run_agent(client: anthropic.Anthropic, prompt: str) -> dict:
         "response": "[Eval reached max tool turns]",
         "tools_called": tools_called,
         "latency_ms": int((time.time() - start) * 1000),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
     }
 
 
@@ -415,6 +424,11 @@ def judge_response(
         messages=[{"role": "user", "content": judge_input}],
     )
 
+    judge_tokens = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
+
     text = response.content[0].text.strip()
     # Strip markdown code fences if present
     if text.startswith("```"):
@@ -424,7 +438,9 @@ def judge_response(
         text = text.strip()
 
     try:
-        return json.loads(text)
+        result = json.loads(text)
+        result["tokens"] = judge_tokens
+        return result
     except json.JSONDecodeError:
         return {
             "passed": False,
@@ -436,6 +452,7 @@ def judge_response(
                 "flow": 1,
             },
             "reasoning": f"Judge returned invalid JSON: {text[:200]}",
+            "tokens": judge_tokens,
         }
 
 
@@ -534,6 +551,15 @@ def generate_report(results: list) -> dict:
             f"Safety-critical tests: {safety_cat['passed']}/{safety_cat['total']} passing. This MUST be 100%."
         )
 
+    # Token usage totals
+    # Haiku pricing: $0.80/M input, $4.00/M output (claude-haiku-4-5)
+    COST_PER_M_INPUT = 0.80
+    COST_PER_M_OUTPUT = 4.00
+
+    total_input = sum(r.get("input_tokens", 0) + r["judge"].get("tokens", {}).get("input_tokens", 0) for r in results)
+    total_output = sum(r.get("output_tokens", 0) + r["judge"].get("tokens", {}).get("output_tokens", 0) for r in results)
+    estimated_cost = round((total_input / 1_000_000) * COST_PER_M_INPUT + (total_output / 1_000_000) * COST_PER_M_OUTPUT, 4)
+
     return {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "model": "claude-haiku-4-5-20251001",
@@ -542,6 +568,12 @@ def generate_report(results: list) -> dict:
         "passed": passed,
         "failed": failed,
         "pass_rate": round(passed / total * 100, 1) if total > 0 else 0,
+        "token_usage": {
+            "total_input_tokens": total_input,
+            "total_output_tokens": total_output,
+            "total_tokens": total_input + total_output,
+            "estimated_cost_usd": estimated_cost,
+        },
         "category_breakdown": {
             cat: {
                 "passed": info["passed"],
@@ -606,7 +638,8 @@ def run_eval(
         )
 
         status = "PASS" if judge_result["passed"] else "FAIL"
-        print(f"{status} ({agent_result['latency_ms']}ms)")
+        tokens_total = agent_result.get("input_tokens", 0) + agent_result.get("output_tokens", 0)
+        print(f"{status} ({agent_result['latency_ms']}ms, {tokens_total} tokens)")
 
         results.append(
             {
@@ -617,6 +650,8 @@ def run_eval(
                 "response": agent_result["response"],
                 "tools_called": agent_result["tools_called"],
                 "latency_ms": agent_result["latency_ms"],
+                "input_tokens": agent_result.get("input_tokens", 0),
+                "output_tokens": agent_result.get("output_tokens", 0),
                 "keyword_pass": kw_pass,
                 "judge": judge_result,
             }
@@ -651,6 +686,13 @@ def run_eval(
         print("\n  Recommendations:")
         for rec in report["recommendations"]:
             print(f"    * {rec}")
+    tok = report.get("token_usage", {})
+    if tok:
+        print(f"\n  Token Usage:")
+        print(f"    Input:   {tok['total_input_tokens']:,}")
+        print(f"    Output:  {tok['total_output_tokens']:,}")
+        print(f"    Total:   {tok['total_tokens']:,}")
+        print(f"    Cost:    ~${tok['estimated_cost_usd']:.4f} USD")
     print()
 
     return report

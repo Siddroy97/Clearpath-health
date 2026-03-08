@@ -50,6 +50,13 @@ interface EvalResult {
   };
 }
 
+interface TokenUsage {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd: number;
+}
+
 interface EvalReport {
   timestamp: string;
   model: string;
@@ -58,6 +65,7 @@ interface EvalReport {
   passed: number;
   failed: number;
   pass_rate: number;
+  token_usage?: TokenUsage;
   category_breakdown: Record<string, CategoryBreakdown>;
   dimension_averages: EvalScores;
   failures: EvalFailure[];
@@ -292,6 +300,47 @@ export default function EvalResults() {
               </p>
             </div>
           </div>
+
+          {/* Token Usage */}
+          {report.token_usage && (
+            <div className="bg-white border border-gray-200 rounded-lg p-3">
+              <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-2">
+                Token Usage &amp; Cost
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                <div className="text-center">
+                  <p className="text-lg font-bold text-gray-800">
+                    {(report.token_usage.total_input_tokens / 1000).toFixed(1)}
+                    <span className="text-[10px] font-normal text-gray-400">k</span>
+                  </p>
+                  <p className="text-[10px] text-gray-500">Input</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-gray-800">
+                    {(report.token_usage.total_output_tokens / 1000).toFixed(1)}
+                    <span className="text-[10px] font-normal text-gray-400">k</span>
+                  </p>
+                  <p className="text-[10px] text-gray-500">Output</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-gray-800">
+                    {(report.token_usage.total_tokens / 1000).toFixed(1)}
+                    <span className="text-[10px] font-normal text-gray-400">k</span>
+                  </p>
+                  <p className="text-[10px] text-gray-500">Total</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-teal-600">
+                    ${report.token_usage.estimated_cost_usd.toFixed(4)}
+                  </p>
+                  <p className="text-[10px] text-gray-500">Est. Cost</p>
+                </div>
+              </div>
+              <p className="text-[9px] text-gray-400 mt-2 text-right">
+                Haiku pricing · $0.80/M input · $4.00/M output
+              </p>
+            </div>
+          )}
 
           {/* Radar chart */}
           <div className="bg-white border border-gray-200 rounded-lg p-3">
