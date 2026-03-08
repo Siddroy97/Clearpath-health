@@ -261,6 +261,19 @@
         "keywords_any": ["human", "agent", "transfer", "connect", "representative", "escalate", "understand", "sorry"],
         "keywords_none": []
       }
+    },
+    {
+      "id": "EC006",
+      "category": "edge_case",
+      "name": "Member ID Prompt is Concise",
+      "turns": [
+        { "role": "user", "content": "I want to check my benefits." }
+      ],
+      "expected_tool": null,
+      "pass_criteria": {
+        "keywords_any": ["MBR", "member ID", "member id", "confirmation email", "insurance card"],
+        "keywords_none": ["Furthermore", "Additionally", "In order to", "please be aware"]
+      }
     }
   ]
 }
