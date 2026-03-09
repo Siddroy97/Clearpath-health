@@ -383,43 +383,55 @@ export async function POST() {
   // Load test cases from bundled JSON (works on Vercel)
   const testCases: TestCase[] = (TEST_CASES_DATA as { test_cases: TestCase[] }).test_cases;
 
-  // Run all test cases in parallel — reduces wall-clock time from ~60s to ~10s
-  const results = await Promise.all(
-    testCases.map(async (tc) => {
-      const prompt = tc.turns[0].content;
+  // Run in batches of 3 to stay under Anthropic rate limits (50k input tokens/min)
+  const BATCH_SIZE = 3;
+  const results: Array<{
+    id: string; name: string; category: string; prompt: string;
+    response: string; tools_called: { name: string; input: Record<string, unknown>; output: string }[];
+    latency_ms: number; input_tokens: number; output_tokens: number;
+    keyword_pass: boolean; judge: { passed: boolean; scores: Record<string, number>; reasoning: string; tokens: { input_tokens: number; output_tokens: number } };
+  }> = [];
 
-      // Run agent
-      const agentResult = await runAgent(client, prompt);
+  for (let i = 0; i < testCases.length; i += BATCH_SIZE) {
+    const batch = testCases.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map(async (tc) => {
+        const prompt = tc.turns[0].content;
 
-      // Keyword check
-      const lower = agentResult.response.toLowerCase();
-      const kwAny = tc.pass_criteria.keywords_any;
-      const kwNone = tc.pass_criteria.keywords_none;
-      const hasExpectedTool = tc.expected_tool
-        ? agentResult.toolsCalled.some((t) => t.name === tc.expected_tool)
-        : true;
-      const hasKeyword = kwAny.length === 0 || kwAny.some((kw) => lower.includes(kw.toLowerCase()));
-      const noFailKeyword = kwNone.length === 0 || !kwNone.some((kw) => lower.includes(kw.toLowerCase()));
-      const keywordPass = hasExpectedTool && hasKeyword && noFailKeyword;
+        // Run agent
+        const agentResult = await runAgent(client, prompt);
 
-      // LLM Judge
-      const judgeResult = await judgeResponse(client, tc, agentResult.response, agentResult.toolsCalled);
+        // Keyword check
+        const lower = agentResult.response.toLowerCase();
+        const kwAny = tc.pass_criteria.keywords_any;
+        const kwNone = tc.pass_criteria.keywords_none;
+        const hasExpectedTool = tc.expected_tool
+          ? agentResult.toolsCalled.some((t) => t.name === tc.expected_tool)
+          : true;
+        const hasKeyword = kwAny.length === 0 || kwAny.some((kw) => lower.includes(kw.toLowerCase()));
+        const noFailKeyword = kwNone.length === 0 || !kwNone.some((kw) => lower.includes(kw.toLowerCase()));
+        const keywordPass = hasExpectedTool && hasKeyword && noFailKeyword;
 
-      return {
-        id: tc.id,
-        name: tc.name,
-        category: tc.category,
-        prompt,
-        response: agentResult.response,
-        tools_called: agentResult.toolsCalled,
-        latency_ms: agentResult.latencyMs,
-        input_tokens: agentResult.inputTokens,
-        output_tokens: agentResult.outputTokens,
-        keyword_pass: keywordPass,
-        judge: judgeResult,
-      };
-    })
-  );
+        // LLM Judge
+        const judgeResult = await judgeResponse(client, tc, agentResult.response, agentResult.toolsCalled);
+
+        return {
+          id: tc.id,
+          name: tc.name,
+          category: tc.category,
+          prompt,
+          response: agentResult.response,
+          tools_called: agentResult.toolsCalled,
+          latency_ms: agentResult.latencyMs,
+          input_tokens: agentResult.inputTokens,
+          output_tokens: agentResult.outputTokens,
+          keyword_pass: keywordPass,
+          judge: judgeResult,
+        };
+      })
+    );
+    results.push(...batchResults);
+  }
 
   // Token totals — Haiku pricing: $0.80/M input, $4.00/M output
   const COST_PER_M_INPUT = 0.80;
